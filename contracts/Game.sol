@@ -26,8 +26,8 @@ contract InfinityGame {
   struct Game {
     uint id;
     Player[numberOfPlayer] players;
-    uint endTime;
     Deck deck;
+    uint endTime;
   }
 
   struct Player {
@@ -74,25 +74,27 @@ contract InfinityGame {
       Card[] memory cards = new Card[](4);
       for(uint j=0;j<4;j++){
         Card[] storage deckCards = deck.cards;
-        Card storage card = deckCards.pop();
+        Card memory card = deckCards[deckCards.length - 1];
+        deckCards.pop();
         cards[j] = card;
       }
       Player memory player = createPlayer(cards);
       players[i] = player;
     }
     uint id = random();
-    while(IDToGames[id] != address(0x0)){
+    while(IDToGames[id].id != 0){
       id = random();
     }
-    return Game(id, players, deck, block.timestamp.add(timeOfAGame));
+    return Game(id, players, deck, (block.timestamp + timeOfAGame));
   }
 
-  function createPlayer(Card[] memory cards) private returns(Player memory){
+  function createPlayer(Card[] memory cards) private returns(Player storage){
     uint id = random();
-    while(IDToPlayer[id] != address(0x0)) {
+    while(IDToPlayer[id].id != 0) {
       id = random();
     }
-    Player memory player = Player(id, [], cards);
+    
+    Player memory player = Player(id, new address[](0), cards);
     IDToPlayer[id] = player;
     return player;
   }
