@@ -12,7 +12,7 @@ contract InfinityGame {
   enum Suit { Diamond, Club, Heart, Spade }
   enum Value { Eight, Nine, Ten, Jack, Queen, King, Ace}
   enum HandEnum { Zilch, OnePair, TwoPair, ThreeOfAKind, Straight, Flush, FullHouse, FourOfAKind, StraightFlush }
-  enum CampareResult { Bigger, Lower, Same }
+  enum CompareResult { Bigger, Lower, Same }
 
   struct Card {
     Suit suit;
@@ -20,30 +20,35 @@ contract InfinityGame {
   }
 
   struct Deck {
-    Card[] cards;
+    mapping(uint => Card) cards;
+    uint cardsLength;
   }
 
   struct Game {
     uint id;
-    Player[numberOfPlayer] players;
+    mapping(uint => Player) playerArray;
+    uint playerArrayLength;
     Deck deck;
     uint endTime;
   }
 
   struct Player {
     uint id;
-    address[] bettors;
-    Card[] cards;
+    mapping(uint=>address) bettorsArray;
+    uint bettorLength;
+    mapping(uint=>Card) cards;
+    uint cardsLength;
   }
 
   struct HandRank {
     HandEnum handEnum;
-    Card[] cards;
+    mapping(uint=>Card) cards;
+    uint cardsLength;
   }
 
-  Game[] games;
-  mapping(uint => Game) IDToGames;
-  mapping(uint => Player) IDToPlayer;
+  
+  mapping(uint => Game) gamesArray;
+  uint gamesArrayLength;
   bool canBet;
 
   uint public feeRate = 10;
@@ -52,77 +57,73 @@ contract InfinityGame {
   function start() public {
     for(uint i=0;i<numberOfGames;i++){
       Game memory game = createGame();
-      games.push(game);
+      gamesArray[i] = game;
+      gamesArrayLength = i + 1;
     }
     canBet = true;
   }
 
 
-  function bet(Player memory player) public payable {
+  function bet(uint gameId, uint playerId) public payable {
     require (msg.value == playerLimit, "stack must equel to playerLimit");
     require (canBet == true, "Can't bet now.");
-    IDToPlayer[player.id].bettors.push(msg.sender);
+
+    uint index = gamesArray[gameId].playerArray[playerId].bettorLength;
+    gamesArray[gameId].playerArray[playerId].bettorsArray[index] = msg.sender;
+    gamesArray[gameId].playerArray[playerId].bettorLength += 1;
   }
 
-  function createGame() private returns (Game memory) {
-    Player[numberOfPlayer] memory players;
-    
+  function createGame() private returns (Game storage) {
     Deck storage deck = newDeck();
+    Game memory game = Game(0,0,deck,0);
 
     for(uint i=0;i<numberOfPlayer;i++){
-
-      Card[] memory cards = new Card[](4);
+      Player storage player = Player(0,0,0);
+      player.id = i;
       for(uint j=0;j<4;j++){
-        Card[] storage deckCards = deck.cards;
-        Card memory card = deckCards[deckCards.length - 1];
-        deckCards.pop();
-        cards[j] = card;
+        
+        Card memory card = deck.cards[deck.cardsLength];
+        deck.cardsLength -= 1;
+        
+        player.cards[j] = card;
+        player.cardsLength += 1;
       }
-      Player memory player = createPlayer(cards);
-      players[i] = player;
+      game.playerArray[i] = player;
+      game.playerArrayLength = i + 1;
     }
-    uint id = random();
-    while(IDToGames[id].id != 0){
-      id = random();
-    }
-    return Game(id, players, deck, (block.timestamp + timeOfAGame));
+    game.endTime = (block.timestamp + timeOfAGame);
+    game.deck = deck;
+    
+    return game;
   }
 
-  function createPlayer(Card[] memory cards) private returns(Player storage){
-    uint id = random();
-    while(IDToPlayer[id].id != 0) {
-      id = random();
-    }
-    
-    Player memory player = Player(id, new address[](0), cards);
-    IDToPlayer[id] = player;
-    return player;
-  }
 
   function newDeck() private returns (Deck storage) {
     //create deck
-    Card[] memory cards = [];
+    Deck storage deck;
     for(uint i=0;i<4;i++) {
       for(uint j=0;j<8;j++){
         Card memory card = Card(Suit(i), Value(j));
-        cards.push(card);
+        
+        deck.cards[deck.cardsLength] = card;
+        deck.cardsLength += 1;
       }
     }
     //cards shuffle
-    for(uint i=0;i<cards.length;i++){
-      uint randNum = random().mod(28);
-      Card memory temp = cards[i];
-      cards[i] = cards[randNum];
-      cards[randNum] = cards[i];
+    for(uint i=0;i<deck.cardsLength;i++){
+      uint randNum = random() % 28;
+      Card memory temp = deck.cards[i];
+      deck.cards[i] = deck.cards[randNum];
+      deck.cards[randNum] = deck.cards[i];
     }
 
-    return Deck(cards);
+    return deck;
   }
 
   function settlement() public {
     canBet = false;
-    for (uint i=0; i<games.length;i++) {
-      Game memory game = games[i];
+    for (uint i=0; i<gamesArrayLength;i++) {
+      Game memory game = gamesArray[i];
       sendLatestCard(game);
       Player[] memory winners = pickWinners(game);
       uint stack = stackInGame(game);
@@ -130,20 +131,24 @@ contract InfinityGame {
         Player memory winner = winners[k];
         sendEth(winner.bettors, stack);
       }
-      for(uint j=0;j<game.players.length;j++){
-        Player memory player = game.players[j];
-        delete IDToPlayer[player.id];
-      }
+      
     }
-    delete games;
+    gamesArrayLength = 0;
+
+    
   }
 
   function sendLatestCard(Game memory game) private {
     require(block.timestamp >= game.endTime);
     require(canBet == false);
-    for (uint i=0;i<game.players.length;i++) {
+    for (uint i=0;i<game.playerArrayLength;i++) {
       Player memory player = game.players[i];
-      player.cards.push(game.deck.shift);
+      Deck memory deck = game.deck;
+      Card memory card = game.deck[game.deck.cardsLength];
+      game.deck.cardsLength -= 1;
+      
+      player.cards[player.cardsLength] = card;
+      player.cardsLength += 1;
     }
   }
 
@@ -166,11 +171,11 @@ contract InfinityGame {
     for(uint i=1;i<numberOfPlayer;i++){
       Player memory challenger = game.players[i];
       HandRank memory hand2 = evaluate(challenger);
-      CampareResult result = hand1BeatHand2(hand1,hand2);
-      if (result == CampareResult.Bigger) {
+      CompareResult result = hand1BeatHand2(hand1,hand2);
+      if (result == CompareResult.Bigger) {
         winners = [challenger];
         HandRank = hand2;
-      }else if (result == CampareResult.some){
+      }else if (result == CompareResult.some){
         winners.push(hand2);
       }
     }
@@ -233,17 +238,19 @@ contract InfinityGame {
     } else if (pairs == 2){
       handEnum = HandEnum.TwoPair;
     } else if (pairs == 0){
-      handEnum = HandEnum.Straight;
+      if(player.cards[4].value - player.cards[0].value == 4){
+        handEnum = HandEnum.Straight;
+      }
     }
 
     return HandRank(handEnum, player.cards);
   }
 
-  function hand1BeatHand2(HandRank memory hand1, HandRank memory hand2) public returns (CampareResult) {
+  function hand1BeatHand2(HandRank memory hand1, HandRank memory hand2) public returns (CompareResult) {
     if (hand1.handEnum > hand2.handEnum){
-      return CampareResult.Bigger;
+      return CompareResult.Bigger;
     }else if (hand2.handEnum > hand2.handEnum){
-      return CampareResult.Lower;
+      return CompareResult.Lower;
     }else {
       if (hand1.handEnum == HandEnum.Zilch) {
         //find max card num
@@ -251,9 +258,9 @@ contract InfinityGame {
         //campare second high card number
         for(uint i=hand1.cards.length - 1;i>=0;i--){
           if (hand1.cards[i] > hand2.cards[i]) {
-            return CampareResult.Bigger;
+            return CompareResult.Bigger;
           } else if (hand1.cards[i] < hand2.cards[i]){
-            return CampareResult.Lower;
+            return CompareResult.Lower;
           }
         }
       } else if (hand1.handEnum == HandEnum.OnePair){
@@ -285,13 +292,13 @@ contract InfinityGame {
     }
   }
 
-  function card1BeatCard2(Card memory card1, Card memory card2) public returns (CampareResult) {
+  function card1BeatCard2(Card memory card1, Card memory card2) public returns (CompareResult) {
     if (card1.value == card2){
-      return CampareResult.Same;
+      return CompareResult.Same;
     }else if (card1.value > card2.value){
-      return CampareResult.Bigger;
+      return CompareResult.Bigger;
     } else {
-      return CampareResult.Lower;
+      return CompareResult.Lower;
     }
   }
 
