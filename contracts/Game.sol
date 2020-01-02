@@ -46,7 +46,6 @@ contract InfinityGame {
     uint cardsLength;
   }
 
-  
   mapping(uint => Game) gamesArray;
   uint gamesArrayLength;
   bool canBet;
@@ -54,12 +53,9 @@ contract InfinityGame {
   uint public feeRate = 10;
   uint public playerLimit = 0.1 ether;
 
+  uint deckInit = 0;
   function start() public {
-    for(uint i=0;i<numberOfGames;i++){
-      Game memory game = createGame();
-      gamesArray[i] = game;
-      gamesArrayLength = i + 1;
-    }
+    createGames();
     canBet = true;
   }
 
@@ -73,34 +69,41 @@ contract InfinityGame {
     gamesArray[gameId].playerArray[playerId].bettorLength += 1;
   }
 
-  function createGame() private returns (Game storage) {
-    Deck storage deck = newDeck();
-    Game memory game = Game(0,0,deck,0);
+  function createGames() private {
+    for(uint i=0;i<numberOfGames;i++){
 
-    for(uint i=0;i<numberOfPlayer;i++){
-      Player storage player = Player(0,0,0);
-      player.id = i;
-      for(uint j=0;j<4;j++){
-        
-        Card memory card = deck.cards[deck.cardsLength];
-        deck.cardsLength -= 1;
-        
-        player.cards[j] = card;
-        player.cardsLength += 1;
+      Deck storage deck = newDeck();
+      uint endTime = (block.timestamp + timeOfAGame);
+      uint gameId = i;
+      uint playerLength = 0;
+      Game memory game = Game(gameId,playerLength,deck,endTime);
+
+      for(uint i=0;i<numberOfPlayer;i++){
+        Player memory player = Player(0,0,0);
+        player.id = i;
+        for(uint j=0;j<4;j++){
+          
+          Card storage card = deck.cards[deck.cardsLength];
+          deck.cardsLength -= 1;
+          
+          player.cards[j] = card;
+          player.cardsLength += 1;
+        }
+        game.playerArray[i] = player;
+        game.playerArrayLength = i + 1;
       }
-      game.playerArray[i] = player;
-      game.playerArrayLength = i + 1;
-    }
-    game.endTime = (block.timestamp + timeOfAGame);
-    game.deck = deck;
-    
-    return game;
-  }
+      game.endTime = (block.timestamp + timeOfAGame);
+      game.deck = deck;
 
+      gamesArray[i] = game;
+      gamesArrayLength = i + 1;
+    }
+
+  }
 
   function newDeck() private returns (Deck storage) {
     //create deck
-    Deck storage deck;
+    Deck storage deck = Deck(deckInit);
     for(uint i=0;i<4;i++) {
       for(uint j=0;j<8;j++){
         Card memory card = Card(Suit(i), Value(j));
@@ -121,6 +124,7 @@ contract InfinityGame {
   }
 
   function settlement() public {
+    
     canBet = false;
     for (uint i=0; i<gamesArrayLength;i++) {
       Game memory game = gamesArray[i];
@@ -134,8 +138,6 @@ contract InfinityGame {
       
     }
     gamesArrayLength = 0;
-
-    
   }
 
   function sendLatestCard(Game memory game) private {
@@ -301,7 +303,6 @@ contract InfinityGame {
       return CompareResult.Lower;
     }
   }
-
 
   function sendEth(address[] memory bettors, uint stack) private {
     uint avgEther = (stack / bettors.length) * (100 - feeRate) / 100;
